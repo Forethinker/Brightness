@@ -1,9 +1,12 @@
-#!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+import sys
 import wx
+import argparse
 import subprocess
 from os import system
+from os import path
+from time import sleep
 
 class BrightnessController(wx.Frame):
 
@@ -24,9 +27,40 @@ class BrightnessController(wx.Frame):
                     connected_devs.append(words[0])
         return connected_devs
 
-    def __init__(self, parent, title):
-        super(BrightnessController, self).__init__(parent, title=title,
+    def detect_calise_file(self):
+        calise = {}
+        with open(path.expanduser("~/.config/calise/default.conf")) as f:
+            for line in f:
+                if line[0] != '[' and not line[0].isspace():
+                    opt_parsed = line.split('=') 
+                    if len(opt_parsed) == 2:
+                        key, val = opt_parsed
+                        calise[key.strip()] = val.strip()
+        f.close()
+        return calise
+
+    def calise_loop(self, time_sec):
+        self.calise_opt = self.detect_calise_file()
+        while 1:
+            with open(self.calise_opt["path"]) as sys_brightness:
+                numer = (int(sys_brightness.readline())+self.offset)*100
+                denom = int(self.calise_opt["steps"])+self.offset
+                val = int(numer/denom)
+                if self.verbose:
+                    print numer, '/', denom, '=', val
+                system(self.cmds_secondary_display[val])
+            sys_brightness.close()
+            sleep(time_sec)
+
+
+    def __init__(self, parent, title, args=None):
+        if not args:
+            super(BrightnessController, self).__init__(parent, title=title,
                                                    size=(325, 100))
+        else:
+            self.interval = args.interval
+            self.offset = args.offset
+            self.verbose = args.verbose
         self.detected_devices = self.detect_display_devices()
         self.no_of_detected_device = len(self.detected_devices)
 
@@ -66,9 +100,13 @@ class BrightnessController(wx.Frame):
         https://github.com/lordamit/Brightness.
         '''
 
-        self.InitUI()
-        self.Center()
-        self.Show()
+        if not args:
+            self.InitUI()
+            self.Center()
+            self.Show()
+        else:
+            self.calise_loop(self.interval)
+
 
     def InitUI(self):
 
@@ -131,7 +169,7 @@ class BrightnessController(wx.Frame):
     def secondary_scroll(self, event):
         """Controls the brightness of secondary monitor"""
         obj = event.GetEventObject()
-        val = obj.GetValue()
+        #val = obj.GetValue()
         system(self.cmds_secondary_display[val])
 
     def about_dialog(self, event):
@@ -139,7 +177,65 @@ class BrightnessController(wx.Frame):
         wx.MessageBox(self.about_me_message, 'About',
             wx.OK | wx.ICON_INFORMATION)
 
+def argsparser(arglist=None, version=None):
+    parser = argparse.ArgumentParser(
+            description=("Change either primary or secondary monitor's brightness.\n"
+            "Compatible with Calise (http://calise.sourceforge.net/wordpress/)\n"
+            "For usage instruction type \"%(prog)s --help\".")
+        )
+
+    parser.add_argument(
+        '-v',
+        '--version',
+        action='version',
+        version='%s %s' % (parser.prog, version),
+        help=("display current version and exits")
+        )
+    parser.add_argument(
+        '-i', 
+        '--interval',
+        metavar='N',
+        dest='interval',
+        type=int,
+        default=120,
+        help=("time interval to check up on the ambient brigthness")
+        )
+    parser.add_argument(
+        '-o',
+        '--offset',
+        metavar='N',
+        dest='offset',
+        type=int,
+        default=20,
+        help=("monitor specific offset")
+        )
+    parser.add_argument(
+        '-vv',
+        '--verbose',
+        dest='verbose',
+        action='store_true',
+        default=False,
+        help=("suppress the output")
+        )
+    parser.add_argument(
+        '-c',
+        '--command_line',
+        dest='commnad_line',
+        action='store_true',
+        default=False,
+        help=("no GUI")
+        )
+    return parser.parse_args()
+
+
+
 if __name__ == '__main__':
-    app = wx.App()
-    BrightnessController(None, title='Brightness Controller')
-    app.MainLoop()
+    args = argsparser()
+    if args.verbose:
+        print "ARGS: ", args
+    if len(sys.argv) > 1:
+        BrightnessController(None, title='Brightness Controller', args=args)
+    else:
+        app = wx.App()
+        BrightnessController(None, title='Brightness Controller')
+        app.MainLoop()
